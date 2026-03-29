@@ -1,0 +1,354 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{tabularx}
+
+\geometry{margin=1in}
+\doublespacing
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\title{%
+    \vspace{2cm}
+    \textbf{Evaluation Protocol (Sprint 4 Bridge)} \\
+    \vspace{0.5cm}
+    \large CISC-727: Advanced Research Explorations (ARE) - I \\
+    \vspace{0.3cm}
+    \large Assignment A03
+}
+\author{%
+    Kenneth Peter Fernandes \\
+    \vspace{0.3cm}
+    Harrisburg University of Science and Technology
+}
+\date{Spring 2026}
+
+\begin{document}
+
+% ============================================================
+% Title Page
+% ============================================================
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\LARGE \textbf{Evaluation Protocol (Sprint 4 Bridge)} \par}
+    \vspace{1cm}
+    {\large CISC-727: Advanced Research Explorations (ARE) - I \par}
+    \vspace{0.5cm}
+    {\large Assignment A03 \par}
+    \vspace{1.5cm}
+    {\large \textit{FlashAttention Speedup Under Multi-GPU Communication Overhead: DDP vs FSDP} \par}
+    \vspace{1.5cm}
+    {\Large Kenneth Peter Fernandes \par}
+    \vspace{0.5cm}
+    {\large Harrisburg University of Science and Technology \par}
+    \vspace{1cm}
+    {\large Spring 2026 \par}
+\end{titlepage}
+
+% ============================================================
+% Section A: Evaluation Protocol
+% ============================================================
+\section{Evaluation Protocol}
+
+% ============================================================
+\subsection{Research Question + Hypothesis}
+
+\textbf{A02 Gap (Continuity):} The literature on efficient attention demonstrates that FlashAttention achieves significant speedups over standard attention through IO-aware kernel optimization on single-GPU settings. However, it remains underexplored how this compute-side advantage interacts with multi-GPU communication overhead---specifically whether FlashAttention's relative speedup is preserved, amplified, or diminished as the communication burden increases across different parallelization strategies.
+
+\vspace{1em}
+\textbf{Research Question:} Does FlashAttention's speedup over standard attention diminish as communication overhead increases when scaling from single-GPU to multi-GPU training using DDP and FSDP?
+
+\vspace{1em}
+\textbf{Hypothesis:} FlashAttention's relative speedup over standard attention diminishes as communication overhead increases. Specifically:
+\begin{itemize}
+    \item On a single GPU (no communication), FlashAttention will show its maximum relative speedup over standard attention.
+    \item Under DDP (gradient all-reduce at the end of backward pass---low communication), the speedup will be partially preserved because communication overhead is modest relative to compute time.
+    \item Under FSDP (all-gather per layer + gradient reduce-scatter---high communication), the speedup will shrink further because communication becomes a larger fraction of total step time, reducing the relative impact of compute-side IO-aware optimization.
+\end{itemize}
+
+\vspace{1em}
+\textbf{Falsification Criteria:} The hypothesis is refuted if FlashAttention's relative speedup (\%) remains constant or increases when moving from single-GPU $\rightarrow$ DDP $\rightarrow$ FSDP. Specifically, if the speedup under FSDP is equal to or greater than the speedup on single GPU (within measurement noise), the hypothesis is rejected.
+
+% ============================================================
+\subsection{System Under Test}
+
+\begin{singlespace}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{4cm} X}
+\toprule
+\textbf{Component} & \textbf{Specification} \\
+\midrule
+Platform & Kaggle Notebooks \\
+GPUs & 2$\times$ NVIDIA Tesla T4 (16 GB HBM2 each) \\
+Interconnect & PCIe (not NVLink) \\
+Framework & PyTorch 2.x \\
+Distributed Backend & NCCL \\
+Model & ViT-Small (patch size 16, embed dim 384, 6 heads, 12 layers) \\
+Dataset & CIFAR-10 (50,000 train images, 10 classes, 32$\times$32 pixels) \\
+Batch Size & 64 per GPU (held constant across all runs) \\
+Training Steps & 100 steps (pilot; sufficient for timing, not convergence) \\
+Attention Backends & Standard attention (math backend) vs FlashAttention (via \texttt{torch.nn.functional.scaled\_dot\_product\_attention} with flash backend) \\
+Precision & float32 (default); float16 via AMP (when toggled) \\
+Random Seed & 42 (fixed across all runs) \\
+\bottomrule
+\end{tabularx}
+\end{singlespace}
+
+% ============================================================
+\subsection{Baselines}
+
+\textbf{Baseline \#1---Single GPU, Standard Attention (R1):}
+Single T4 GPU training with PyTorch's default math-based attention. This is the absolute reference point---no parallelism, no IO-aware optimization. All speedups are measured relative to this.
+
+\vspace{1em}
+\textbf{Baseline \#2---Single GPU, FlashAttention (R2):}
+Single T4 GPU training with FlashAttention enabled via \texttt{scaled\_dot\_product\_attention}. This establishes the maximum FlashAttention speedup achievable without any communication overhead. The difference between R1 and R2 isolates FlashAttention's compute-side benefit.
+
+% ============================================================
+\subsection{Independent Variables (Factors)}
+
+\begin{enumerate}
+    \item \textbf{Attention Backend} (2 levels):
+    \begin{itemize}
+        \item Standard attention (PyTorch math backend)
+        \item FlashAttention (PyTorch flash backend via SDPA)
+    \end{itemize}
+
+    \item \textbf{Parallelization Strategy} (3 levels):
+    \begin{itemize}
+        \item Single GPU (no parallelism)
+        \item DDP (DistributedDataParallel---low communication: all-reduce after backward)
+        \item FSDP (FullyShardedDataParallel---high communication: all-gather per layer + reduce-scatter)
+    \end{itemize}
+
+    \item \textbf{Compute-side Optimization} (2 levels):
+    \begin{itemize}
+        \item Off (float32)
+        \item Mixed Precision / AMP (float16 via \texttt{torch.autocast})
+    \end{itemize}
+
+    \item \textbf{Comm-side Optimization} (2 levels):
+    \begin{itemize}
+        \item Off (default sequential compute then communicate)
+        \item Overlap Compute/Comm (overlap gradient communication with backward pass computation)
+    \end{itemize}
+\end{enumerate}
+
+\vspace{1em}
+\textbf{Why DDP + FSDP:}
+These two strategies share the same data-parallel philosophy (each GPU processes different data) but differ fundamentally in communication pattern. DDP communicates once at the end (all-reduce gradients), while FSDP communicates every layer (all-gather parameters + reduce-scatter gradients). This creates a natural communication overhead gradient (low $\rightarrow$ high) that directly tests whether FlashAttention's compute-side benefit survives increasing communication load. Model parallelism and pipeline parallelism were rejected because they introduce orthogonal bottlenecks (tensor splitting, pipeline bubbles) that would confound the attention-kernel-focused hypothesis.
+
+\vspace{1em}
+\textbf{Why AMP:}
+Both AMP and FlashAttention optimize memory access---AMP at the data-type level (float16 reduces memory bandwidth), FlashAttention at the kernel level (tiling reduces HBM traffic). Testing AMP reveals whether these two memory-access optimizations stack independently or show diminishing returns when combined.
+
+\vspace{1em}
+\textbf{Why Overlap Compute/Comm:}
+FlashAttention reduces compute time per step. Overlap compute/comm hides communication behind compute. If FlashAttention shortens compute, there is less time available to hide communication---making overlap potentially less effective with FlashAttention than with standard attention. This is a testable interaction.
+
+% ============================================================
+\subsection{Dependent Variables (Metrics)}
+
+\textbf{Required Metrics:}
+\begin{itemize}
+    \item \textbf{Time per step} (seconds): wall-clock time for one training step (forward + backward + optimizer), measured via \texttt{torch.cuda.Event} for precision.
+    \item \textbf{Throughput} (samples/second): \texttt{batch\_size / time\_per\_step}.
+    \item \textbf{Speedup}: \texttt{time\_per\_step(baseline) / time\_per\_step(variant)}, relative to R1.
+    \item \textbf{Scaling efficiency}: \texttt{speedup / number\_of\_GPUs} (ideal = 1.0).
+\end{itemize}
+
+\vspace{1em}
+\textbf{Additional Metrics:}
+\begin{itemize}
+    \item \textbf{Compute vs communication breakdown}: separate timing of forward pass, backward pass, and communication (gradient sync) using CUDA events. This directly measures whether communication is the bottleneck that erodes FlashAttention's advantage.
+    \item \textbf{FlashAttention relative speedup (\%)}: \texttt{(time\_standard $-$ time\_flash) / time\_standard $\times$ 100}, computed within each parallelization strategy. This is the primary metric for testing the hypothesis---if this percentage drops from single-GPU $\rightarrow$ DDP $\rightarrow$ FSDP, the hypothesis is supported.
+\end{itemize}
+
+% ============================================================
+\subsection{Ablation Plan}
+
+Ablations follow a one-factor-at-a-time discipline. Each run changes exactly one variable from a reference configuration, so the effect of each factor can be isolated.
+
+\vspace{1em}
+\textbf{Stage 1---Attention Backend $\times$ Parallelization (core hypothesis test):}
+
+Hold constant: batch size, model, dataset, steps, precision (float32), no optimizations.
+\begin{itemize}
+    \item R1: Single GPU + Standard Attention (absolute baseline)
+    \item R2: Single GPU + FlashAttention
+    \item R3: DDP + Standard Attention
+    \item R4: DDP + FlashAttention
+    \item R5: FSDP + Standard Attention
+    \item R6: FSDP + FlashAttention
+\end{itemize}
+
+Compare FlashAttention speedup: R2 vs R1, R4 vs R3, R6 vs R5. If speedup \% decreases across these pairs, hypothesis is supported.
+
+\vspace{1em}
+\textbf{Stage 2---Optimization Ablations (on DDP + FlashAttention as reference):}
+
+Hold constant: DDP, FlashAttention, batch size, model, dataset, steps.
+\begin{itemize}
+    \item R4: DDP + FlashAttention (reference, no optimizations)
+    \item R7: DDP + FlashAttention + AMP only
+    \item R8: DDP + FlashAttention + Overlap Compute/Comm only
+    \item R9: DDP + FlashAttention + AMP + Overlap (combined)
+\end{itemize}
+
+This tests whether each optimization provides independent benefit and whether they stack.
+
+% ============================================================
+\subsection{Acceptance Criteria}
+
+\begin{enumerate}
+    \item \textbf{Warmup policy:} The first 10 steps of each run are discarded. Timing is measured over steps 11--100 (90 steps). This avoids CUDA warmup, JIT compilation, and data loader initialization artifacts.
+    \item \textbf{Repetitions:} Each run is repeated 3 times. The \textbf{median} of the 3 runs is reported to reduce outlier sensitivity.
+    \item \textbf{Convergence constraint:} Since this is a pilot timing study (100 steps), convergence is not required. However, training loss must decrease over the 100 steps to confirm the model is learning and the setup is not broken.
+    \item \textbf{Success threshold:} A speedup or slowdown is considered meaningful only if it exceeds \textbf{5\%} relative to the reference. Differences within 5\% are reported as ``within noise.''
+    \item \textbf{Hardware consistency:} All runs must execute on the same Kaggle session (same GPU allocation) to avoid hardware variability across sessions.
+\end{enumerate}
+
+% ============================================================
+\subsection{Threats to Validity}
+
+\begin{singlespace}
+\small
+\begin{longtable}{>{\raggedright\arraybackslash}p{3.5cm} >{\raggedright\arraybackslash}p{4.5cm} >{\raggedright\arraybackslash}p{5.5cm}}
+\toprule
+\textbf{Threat} & \textbf{Impact} & \textbf{Mitigation} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Threat} & \textbf{Impact} & \textbf{Mitigation} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+Kaggle PCIe interconnect & T4s connect via PCIe (not NVLink), inflating communication overhead compared to production setups & Acknowledged as a limitation; results may overstate communication impact. Report interconnect type explicitly. \\
+\midrule
+Kaggle session variability & Different sessions may allocate different physical GPUs or share host resources & Run all experiments in a single session. Report if session restarts occur. \\
+\midrule
+Warmup / JIT effects & First few steps are slower due to CUDA kernel compilation and caching & Discard first 10 steps; report only steps 11--100. \\
+\midrule
+Small model on 2 GPUs & ViT-Small may not stress communication enough; compute may dominate even under FSDP & Acknowledged. If comm overhead is negligible, results will show flat speedup across strategies (which would refute the hypothesis---a valid outcome). \\
+\midrule
+Batch size changes & Different strategies may require different batch sizes for memory reasons & Batch size is held constant (64/GPU). If FSDP requires adjustment, it will be documented and justified. \\
+\midrule
+CIFAR-10 image size & 32$\times$32 images produce short sequences (4$\times$4 = 16 patches with patch size 16), which may not stress attention enough & Acknowledged. Sequence length may be too short for FlashAttention to show significant advantage. If so, patch size can be reduced to increase sequence length (e.g., patch size 4 $\rightarrow$ 64 patches). \\
+\midrule
+Random seed sensitivity & Single seed may produce unrepresentative training dynamics & Fixed seed (42) for reproducibility. Timing metrics (not accuracy) are the primary outcome, reducing seed sensitivity. \\
+\midrule
+Mixed precision numerical effects & AMP may change convergence behavior or introduce instability & Loss values are logged to verify training stability. AMP runs are compared on timing, not accuracy. \\
+\midrule
+Torch compile / backend caching & PyTorch may cache kernels across runs within the same process & Each run configuration is executed in a fresh process or after cache clearing. \\
+
+\end{longtable}
+\end{singlespace}
+
+% ============================================================
+% Section B: Run Plan Table
+% ============================================================
+\section{Run Plan Table}
+
+\begin{singlespace}
+\small
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.8cm} >{\raggedright\arraybackslash}p{1.8cm} >{\raggedright\arraybackslash}p{1.8cm} >{\raggedright\arraybackslash}p{1.8cm} >{\raggedright\arraybackslash}p{2.2cm} >{\raggedright\arraybackslash}p{2.8cm} >{\raggedright\arraybackslash}p{2.2cm}}
+\toprule
+\textbf{Run ID} & \textbf{Parallel.} & \textbf{Attention} & \textbf{Optim.} & \textbf{Held Constant} & \textbf{Expected Outcome} & \textbf{Metrics} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Run ID} & \textbf{Parallel.} & \textbf{Attention} & \textbf{Optim.} & \textbf{Held Constant} & \textbf{Expected Outcome} & \textbf{Metrics} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+R1 & Single GPU & Standard & None & ViT-Small, CIFAR-10, batch 64, 100 steps, seed 42, fp32 & Absolute reference: slowest configuration & Time/step, throughput \\
+\midrule
+R2 & Single GPU & Flash & None & Same as R1 & Faster than R1; maximum FA speedup & Time/step, throughput, speedup \\
+\midrule
+R3 & DDP (2 GPU) & Standard & None & Same as R1 & $\sim$1.5--1.8$\times$ speedup over R1 & Time/step, throughput, speedup, efficiency \\
+\midrule
+R4 & DDP (2 GPU) & Flash & None & Same as R1 & Faster than R3, FA speedup \% smaller than R2 vs R1 & Time/step, throughput, speedup, FA rel. speedup \\
+\midrule
+R5 & FSDP (2 GPU) & Standard & None & Same as R1 & Slower than R3 due to higher comm & Time/step, throughput, speedup, efficiency \\
+\midrule
+R6 & FSDP (2 GPU) & Flash & None & Same as R1 & Faster than R5, FA speedup \% smallest & Time/step, throughput, speedup, FA rel. speedup \\
+\midrule
+R7 & DDP (2 GPU) & Flash & AMP & Same as R1 (except precision) & Faster than R4; AMP stacks with FA & Time/step, throughput, AMP impact \\
+\midrule
+R8 & DDP (2 GPU) & Flash & Overlap & Same as R1 & Faster than R4; overlap benefit may be smaller with FA & Time/step, throughput, comm breakdown \\
+\midrule
+R9 & DDP (2 GPU) & Flash & AMP + Overlap & Same as R1 (except precision) & Fastest DDP config & Time/step, throughput, combined impact \\
+
+\end{longtable}
+\end{singlespace}
+
+\vspace{1em}
+\textbf{Key Comparisons:}
+\begin{itemize}
+    \item \textbf{Hypothesis test:} Compare FA relative speedup across (R2 vs R1) $\rightarrow$ (R4 vs R3) $\rightarrow$ (R6 vs R5). Expect: decreasing \%.
+    \item \textbf{Optimization stacking:} Compare R4 $\rightarrow$ R7 (AMP effect), R4 $\rightarrow$ R8 (overlap effect), R4 $\rightarrow$ R9 (combined).
+    \item \textbf{Comm overhead visualization:} Compute vs comm breakdown for R3, R4, R5, R6.
+\end{itemize}
+
+\vspace{1em}
+\textbf{Plots to Produce:}
+\begin{enumerate}
+    \item Bar chart: time/step for R1--R6 (core hypothesis test)
+    \item Grouped bar chart: FlashAttention relative speedup \% across Single GPU / DDP / FSDP
+    \item Stacked bar chart: compute vs communication breakdown for R3--R6
+    \item Bar chart: optimization ablation impact (R4, R7, R8, R9)
+\end{enumerate}
+
+% ============================================================
+% Section C: Config Pack
+% ============================================================
+\section{Config Pack}
+
+Configuration files are stored in \texttt{configs/} as YAML files, one per Run ID. Each config specifies all parameters needed to reproduce the run. See \texttt{configs/r1\_single\_gpu\_standard.yaml} through \texttt{configs/r9\_ddp\_flash\_amp\_overlap.yaml}.
+
+\vspace{1em}
+Base parameters shared across all runs:
+
+\begin{verbatim}
+model:
+  name: vit_small
+  patch_size: 16
+  embed_dim: 384
+  num_heads: 6
+  num_layers: 12
+
+dataset:
+  name: cifar10
+  num_classes: 10
+
+training:
+  batch_size_per_gpu: 64
+  num_steps: 100
+  warmup_steps: 10
+  seed: 42
+  optimizer: adamw
+  learning_rate: 0.001
+\end{verbatim}
+
+Per-run overrides are documented in individual config files. See \texttt{README.md} for exact reproduction commands.
+
+\end{document}

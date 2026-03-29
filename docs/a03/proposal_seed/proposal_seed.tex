@@ -1,0 +1,192 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{enumitem}
+
+\geometry{margin=1in}
+\doublespacing
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\title{%
+    \vspace{2cm}
+    \textbf{Proposal Seed} \\
+    \vspace{0.5cm}
+    \large CISC-727: Advanced Research Explorations (ARE) - I \\
+    \vspace{0.3cm}
+    \large Assignment A03
+}
+\author{%
+    Kenneth Peter Fernandes \\
+    \vspace{0.3cm}
+    Harrisburg University of Science and Technology
+}
+\date{Spring 2026}
+
+\begin{document}
+
+% ============================================================
+% Title Page
+% ============================================================
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\LARGE \textbf{Proposal Seed} \par}
+    \vspace{1cm}
+    {\large CISC-727: Advanced Research Explorations (ARE) - I \par}
+    \vspace{0.5cm}
+    {\large Assignment A03 \par}
+    \vspace{1.5cm}
+    {\large \textit{FlashAttention Speedup Under Multi-GPU Communication Overhead: DDP vs FSDP} \par}
+    \vspace{1.5cm}
+    {\Large Kenneth Peter Fernandes \par}
+    \vspace{0.5cm}
+    {\large Harrisburg University of Science and Technology \par}
+    \vspace{1cm}
+    {\large Spring 2026 \par}
+\end{titlepage}
+
+% ============================================================
+% Problem Statement
+% ============================================================
+\section{Problem Statement}
+
+Transformer-based models rely on self-attention, which scales quadratically with sequence length in both time and memory. FlashAttention addresses this bottleneck not by approximating attention but by optimizing memory access patterns at the GPU kernel level---reducing HBM traffic through tiling and fused operations while preserving exact attention outputs. On a single GPU, FlashAttention demonstrates significant speedups over standard attention, particularly at longer sequence lengths.
+
+However, modern training workflows increasingly require multi-GPU parallelism. When training is distributed across GPUs, a new bottleneck emerges: inter-GPU communication (gradient synchronization, parameter sharing). The literature extensively benchmarks FlashAttention in single-GPU and large-cluster settings, but there is a gap in understanding how FlashAttention's compute-side IO-aware advantage interacts with communication overhead in multi-GPU configurations---specifically whether the relative speedup is preserved, diminished, or eliminated as communication burden increases across parallelization strategies like DDP and FSDP.
+
+This gap matters practically: researchers and practitioners with modest multi-GPU setups (2--8 GPUs) need guidance on whether adopting FlashAttention yields meaningful end-to-end training speedups or whether communication overhead dominates total step time, making the kernel-level optimization less impactful than single-GPU benchmarks suggest.
+
+% ============================================================
+% Novelty / Positioning Paragraph
+% ============================================================
+\section{Novelty / Positioning Paragraph}
+
+Existing work on FlashAttention (Dao et al., 2022; Dao, 2023; Shah et al., 2024) demonstrates substantial speedups through IO-aware exact attention on single GPUs, with each successive version improving GPU utilization through better work partitioning and hardware-specific features. Separately, the efficient attention literature (BigBird, Longformer, Performer, Linformer, Nystr\"{o}mformer) pursues sub-quadratic complexity through approximation or sparsity, but cross-family comparisons remain inconsistent due to varying hardware, metrics, and evaluation protocols (Tay et al., 2020; Zhang et al., 2025). What is missing from both lines of work is a controlled investigation of how FlashAttention's compute-side benefit scales under increasing communication overhead in multi-GPU training. This study addresses that gap by measuring FlashAttention's relative speedup across three communication regimes---no communication (single GPU), low communication (DDP), and high communication (FSDP)---on identical hardware, model, and dataset configurations. The contribution is not a new attention mechanism but a reproducible empirical framework that quantifies the interaction between kernel-level compute optimization and distributed training communication cost, providing evidence-based guidance for multi-GPU attention kernel selection.
+
+% ============================================================
+% Method Summary
+% ============================================================
+\section{Method Summary}
+
+The proposed method is an empirical comparative study, not an algorithmic contribution. The approach consists of:
+
+\begin{enumerate}
+    \item \textbf{Model and Task:} ViT-Small (patch size 16, embed dim 384, 6 heads, 12 layers) trained on CIFAR-10 for image classification. The model is chosen for its attention-heavy architecture (directly exercises FlashAttention), and the dataset for its simplicity (the research question is about system performance, not model accuracy).
+
+    \item \textbf{Attention Backends:} Each experiment is run with two attention implementations---standard PyTorch math-based attention and FlashAttention via \texttt{scaled\_dot\_product\_attention}---holding all other variables constant.
+
+    \item \textbf{Parallelization Strategies:} Three communication regimes are compared:
+    \begin{itemize}
+        \item Single GPU (zero communication overhead)
+        \item DDP (low communication---all-reduce at end of backward pass)
+        \item FSDP (high communication---all-gather per layer + reduce-scatter)
+    \end{itemize}
+
+    \item \textbf{Optimization Ablations:} Mixed Precision (AMP) and Overlap Compute/Comm are tested individually and in combination on the DDP + FlashAttention configuration to assess whether compute-side and comm-side optimizations stack with FlashAttention.
+
+    \item \textbf{Measurement:} Time per step, throughput, speedup, scaling efficiency, and compute vs communication breakdown are collected using CUDA event timing. FlashAttention's relative speedup (\%) is computed within each parallelization strategy to test the hypothesis.
+\end{enumerate}
+
+% ============================================================
+% Evaluation Plan
+% ============================================================
+\section{Evaluation Plan}
+
+\subsection{Metrics}
+\begin{itemize}
+    \item Time per step (seconds)---primary timing metric
+    \item Throughput (samples/second)
+    \item Speedup relative to single-GPU standard attention baseline
+    \item Scaling efficiency (speedup / number of GPUs)
+    \item FlashAttention relative speedup (\%) within each strategy---primary hypothesis metric
+    \item Compute vs communication time breakdown
+\end{itemize}
+
+\subsection{Baselines}
+\begin{itemize}
+    \item Single GPU + Standard Attention (absolute baseline)
+    \item Single GPU + FlashAttention (maximum FA benefit reference)
+    \item DDP + Standard Attention (multi-GPU baseline without FA)
+\end{itemize}
+
+\subsection{Ablations}
+\begin{itemize}
+    \item 9 runs total: 6 core hypothesis runs (attention $\times$ parallelization) + 3 optimization ablation runs (AMP, overlap, combined)
+    \item One-factor-at-a-time discipline: each run changes exactly one variable
+\end{itemize}
+
+\subsection{Workloads / Datasets}
+\begin{itemize}
+    \item CIFAR-10 (pilot). For ARE-II, extend to ImageNet-1K or a long-sequence NLP dataset to test at longer sequence lengths where FlashAttention's advantage is expected to be larger.
+\end{itemize}
+
+\subsection{What Constitutes Success}
+\begin{itemize}
+    \item If FlashAttention's relative speedup (\%) decreases monotonically from single-GPU $\rightarrow$ DDP $\rightarrow$ FSDP, the hypothesis is supported and the communication-overhead modulation effect is confirmed.
+    \item If the speedup remains constant, this refutes the hypothesis but provides equally valuable evidence that FlashAttention's benefit is robust to communication regime.
+    \item Either outcome produces a publishable finding.
+\end{itemize}
+
+% ============================================================
+% Pilot Findings (A03)
+% ============================================================
+\section{Pilot Findings (A03)}
+
+The pilot was executed on Kaggle with 2$\times$ NVIDIA T4 GPUs (PCIe) using ViT-Small (patch 16) on CIFAR-10, running all 9 experiments (R1--R9) with 3 repetitions each.
+
+\subsection{Key Results}
+
+\begin{enumerate}
+    \item \textbf{FlashAttention showed no meaningful speedup in any configuration.} Relative speedup was $-2.63\%$ (single GPU), $+1.01\%$ (DDP), and $-0.06\%$ (FSDP)---all within the $\pm 5\%$ noise threshold. FlashAttention and standard attention were functionally equivalent.
+
+    \item \textbf{Multi-GPU training was slower than single GPU.} DDP and FSDP achieved only 0.59$\times$ speedup (vs.\ expected 1.5--1.8$\times$). Communication overhead on PCIe ($\sim$24ms) dominated the $\sim$35ms compute time.
+
+    \item \textbf{AMP increased step time by 9.4\%.} The T4's FP16 overhead exceeded the compute savings for this small model. Overlap compute/comm had negligible effect because there was insufficient compute time to hide communication behind.
+\end{enumerate}
+
+\subsection{Interpretation}
+
+The hypothesis (FlashAttention's speedup diminishes with increasing communication overhead) could not be tested because FlashAttention showed no baseline speedup to begin with. The root cause is sequence length: ViT-Small with patch size 16 on 32$\times$32 CIFAR-10 images produces only 5 tokens (4 patches + 1 CLS token). The resulting 5$\times$5 attention matrix fits entirely in GPU SRAM without requiring FlashAttention's tiling---there is no HBM traffic to optimize. This is consistent with the ``efficiency length'' concept from the CAB benchmark identified in the A02 literature review.
+
+This is a valid negative result that directly informs the ARE-II experiment design: the sequence length must be long enough for FlashAttention to demonstrate a baseline speedup before the communication-modulation hypothesis can be tested.
+
+% ============================================================
+% Next Steps for ARE-II
+% ============================================================
+\section{Next Steps for ARE-II}
+
+The pilot identified sequence length as the critical variable that must be addressed before the core hypothesis can be tested. The ARE-II plan is refined accordingly:
+
+\begin{enumerate}
+    \item \textbf{Increase sequence length (critical).} Reduce ViT patch size from 16 to 4, increasing sequence length from 5 to 65 tokens on CIFAR-10. Alternatively, switch to an NLP workload with sequence lengths of 512--4096 tokens (e.g., WikiText-103 with GPT-2), where FlashAttention's advantage is well-established in single-GPU benchmarks.
+
+    \item \textbf{Scale hardware.} Move from Kaggle 2$\times$ T4 (PCIe) to a multi-GPU node with NVLink (e.g., 4$\times$ or 8$\times$ A100). The pilot showed PCIe communication overhead dominated step time---NVLink would reduce this bottleneck and allow cleaner measurement of the compute-side FlashAttention effect.
+
+    \item \textbf{Add tensor parallelism.} Include tensor parallelism, which splits the attention computation itself across GPUs, to test whether FlashAttention's tiling interacts with intra-layer parallelism differently than with data-parallel communication.
+
+    \item \textbf{Cross-family comparison.} Extend beyond FlashAttention vs standard attention to include sparse (BigBird) and linear (Performer) alternatives under the same multi-GPU conditions. This addresses the broader A02 gap of inconsistent cross-family evaluation.
+
+    \item \textbf{Formalize the evaluation framework.} Package the measurement methodology (CUDA event timing, compute/comm breakdown, relative speedup metric) as a reusable benchmark protocol that other researchers can apply to new attention kernels and parallelization strategies.
+\end{enumerate}
+
+\subsection{Contributions (for ARE-II)}
+\begin{itemize}
+    \item An empirical finding on how compute-side kernel optimization interacts with distributed training communication overhead
+    \item A reproducible evaluation framework for multi-GPU attention kernel benchmarking
+    \item Evidence-based guidance for practitioners choosing attention implementations in multi-GPU settings
+    \item Characterization of FlashAttention's sequence-length crossover threshold under distributed training conditions
+\end{itemize}
+
+\end{document}

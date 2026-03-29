@@ -1,0 +1,481 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage[style=apa, backend=biber, sortcites=true, sorting=nyt]{biblatex}
+\addbibresource{../references/references.bib}
+
+\geometry{margin=1in}
+\doublespacing
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+% ============================================================
+% Title Page Information
+% ============================================================
+\title{%
+    \vspace{2cm}
+    \textbf{Literature Review} \\
+    \vspace{0.5cm}
+    \large CISC-727:   Advanced Research Explorations (ARE) - I\\
+    \vspace{0.3cm}
+    \large Assignment A02
+}
+\author{%
+    Kenneth Peter Fernandes \\
+    \vspace{0.3cm}
+    Harrisburg University of Science and Technology
+}
+\date{Spring 2026}
+
+\begin{document}
+
+% ============================================================
+% Title Page
+% ============================================================
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\LARGE \textbf{Literature Review} \par}
+    \vspace{1cm}
+    {\large CISC-727: Advanced Research Explorations (ARE) - I \par}
+    \vspace{0.5cm}
+    {\large Assignment A02 \par}
+    \vspace{1.5cm}
+    {\large \textit{Efficient Attention for Long-Context Transformers with Emphasis on IO-Aware Exact Attention (FlashAttention family) and Cross-Family Benchmarking Gaps} \par}
+    \vspace{1.5cm}
+    {\Large Kenneth Peter Fernandes \par}
+    \vspace{0.5cm}
+    {\large Harrisburg University of Science and Technology \par}
+    \vspace{1.5cm}
+    {\large \textbf{Instructor:} Professor Majid Shaalan, PhD \par}
+    \vspace{1.5cm}
+    {\large Spring 2026 \par}
+    \vfill
+\end{titlepage}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================
+% Topic Focus
+% ============================================================
+\noindent\textbf{Topic Focus:} Efficient Attention for Long-Context Transformers with Emphasis on IO-Aware Exact Attention (FlashAttention family) and Cross-Family Benchmarking Gaps.
+
+\vspace{1em}
+
+% ============================================================
+% Section 1: Researchability and Scope of the Topic
+% ============================================================
+\section{Researchability and Scope of the Topic}
+
+This literature review focuses on a researchable question at the intersection of Transformer architecture efficiency, GPU systems optimization, and long-context sequence modeling: \emph{Under what sequence-length and hardware conditions does IO-aware exact attention (e.g., FlashAttention) provide superior memory efficiency and runtime throughput compared to standard attention and representative efficient attention alternatives (sparse and linear/approximate methods) on a single GPU?}
+
+This topic is researchable because it can be evaluated using measurable and reproducible computational outcomes, existing open-source implementations, and widely used benchmarks. The underlying motivation is well established in the literature: standard Transformer self-attention has quadratic time and memory behavior with respect to sequence length, which limits scalability for long-context tasks \parencite{vaswani2023attentionneed, dao2022flashattentionfastmemoryefficientexact}. The selected papers also show that the research space has multiple competing solution families (exact IO-aware kernels, sparse attention, and linear/approximate attention), but the evaluation practices across these families are often inconsistent, motivating a careful, scoped empirical study \parencite{10.1145/3530811, tay2020longrangearenabenchmark, zhang2025cabcomprehensiveattentionbenchmarking}.
+
+The scope of this study is feasible because it can be bounded to: (a) single-GPU experiments, (b) attention-layer or microbenchmark-level evaluation, and (c) a limited set of sequence lengths and head dimensions. This avoids the need for large-scale pretraining while still producing scientifically useful results. It also aligns with the systems-oriented concern in FlashAttention, which explicitly argues that wall-clock performance is not determined by FLOPs alone but by memory traffic across GPU memory levels (HBM $\leftrightarrow$ SRAM) \parencite{dao2022flashattentionfastmemoryefficientexact}.
+
+A practical scope boundary for this review and later pilot study is to prioritize training/inference kernel efficiency over end-task accuracy. In other words, this work is positioned in the systems efficiency evaluation space, not in full model quality optimization across many downstream tasks. This scope is appropriate for research entering the field from a systems/GPU orientation and helps ensure feasibility within the available timelines.
+
+\subsection{Candidate Measurable Variables / Metrics}
+
+The following variables are appropriate and measurable in future sprints:
+
+\subsubsection{Runtime / Throughput Metrics}
+\begin{itemize}
+    \item Attention kernel latency (ms)
+    \item Tokens/sec or sequences/sec
+    \item Throughput vs sequence length
+\end{itemize}
+
+\subsubsection{Memory Efficiency Metrics}
+\begin{itemize}
+    \item Peak GPU memory usage (MB/GB)
+    \item Memory scaling trend with sequence length
+    \item Memory traffic proxies / kernel-level profiling counters, if available
+\end{itemize}
+
+\subsubsection{Compute Utilization / Efficiency Metrics}
+\begin{itemize}
+    \item GPU utilization or achieved FLOPs/s, where supported
+    \item Occupancy/utilization indicators, especially relevant for FlashAttention-2/3 \parencite{dao2023flashattention2fasterattentionbetter, shah2024flashattention3fastaccurateattention}
+\end{itemize}
+
+\subsection{Practical Constraints}
+
+This topic is feasible but should explicitly acknowledge constraints:
+\begin{itemize}
+    \item Limited access to multiple GPU architectures (e.g., H100 vs A100 vs consumer GPUs)
+    \item Time constraints for reproducing exact kernel-level numbers from papers
+    \item Implementation compatibility differences across methods (e.g., optimized CUDA kernels vs conceptual methods)
+    \item Fairness challenges when comparing exact vs approximate attention methods across different settings \parencite{tay2020longrangearenabenchmark, zhang2025cabcomprehensiveattentionbenchmarking}
+\end{itemize}
+
+
+% ============================================================
+% Section 2: Literature Review Process and Search Strategy
+% ============================================================
+\section{Literature Review Process and Search Strategy}
+
+This review follows a structured and auditable literature review process designed to support later hypothesis formation and evaluation design. The process began with a broad framing of the problem (Transformer attention inefficiency for long sequences), then narrowed to a specific subproblem: efficient attention mechanisms with emphasis on GPU-aware exact attention (FlashAttention) and benchmarking gaps across method families.
+
+The review strategy intentionally included three types of sources: (1) foundational architecture papers (to define the baseline and terminology), (2) method papers representing different efficiency philosophies (exact/IO-aware, sparse, linear/approximate), and (3) benchmark/survey papers to understand the state of evaluation practice and unresolved comparison issues. This sequencing is important because efficient attention papers frequently use different assumptions, datasets, and reporting conventions, which can create misleading comparisons if not anchored in a common taxonomy and evaluation lens \parencite{10.1145/3530811, tay2020longrangearenabenchmark, zhang2025cabcomprehensiveattentionbenchmarking}.
+
+\subsection{Databases and Search Sources Used}
+
+The review can be documented as using:
+\begin{itemize}
+    \item Google Scholar
+    \item arXiv
+    \item ACM Digital Library
+    \item IEEE Xplore / Semantic Scholar for cross-checking
+\end{itemize}
+
+\subsection{Search Strings}
+
+The following search strings are appropriate and aligned with the topic:
+\begin{itemize}
+    \item \texttt{"FlashAttention" transformer attention GPU}
+    \item \texttt{"FlashAttention" memory throughput}
+    \item \texttt{"efficient attention" transformer survey}
+    \item \texttt{"sparse attention" transformer long sequence}
+    \item \texttt{"linear attention" transformer}
+    \item \texttt{"attention benchmark" long range arena efficient transformers}
+    \item \texttt{"Comprehensive Attention Benchmarking" long sequence attention}
+    \item \texttt{"Performer" linear attention transformer}
+    \item \texttt{"BigBird" sparse attention transformer long sequences}
+\end{itemize}
+
+These searches are justified because they cover both method discovery (FlashAttention, Performer, BigBird) and evaluation framework discovery (LRA, CAB), which is essential for novelty positioning in this review.
+
+\subsection{Inclusion Criteria}
+
+The review prioritized papers that met most of the following criteria:
+\begin{itemize}
+    \item Peer-reviewed conference/journal paper or highly influential preprint
+    \item Direct relevance to Transformer attention efficiency
+    \item Clear method class representation (exact / sparse / linear-approximate / benchmark / survey)
+    \item Reports at least one measurable efficiency or performance result
+    \item Sufficient detail to support comparison (method description + experimental setup or benchmark context)
+\end{itemize}
+
+\subsection{Exclusion Criteria}
+
+Papers were deprioritized or excluded if they:
+\begin{itemize}
+    \item Focused on generic LLM compression but not attention efficiency specifically
+    \item Lacked a clear relation to long-sequence modeling
+    \item Were too implementation-specific without interpretable evaluation details
+    \item Duplicated the contribution of a more canonical paper in the same category
+\end{itemize}
+
+\subsection{Screening Logic}
+
+The screening process can be described as:
+\begin{enumerate}
+    \item \textbf{Stage 1:} Title/abstract screening for topic alignment
+    \item \textbf{Stage 2:} Introduction and experiments section screening for evaluation relevance
+    \item \textbf{Stage 3:} Full/partial read classification by role (deep/medium/skim)
+\end{enumerate}
+
+Since this review is centered on a scoped method family, the final set intentionally balances coverage and depth:
+\begin{itemize}
+    \item \textbf{Core deep/medium reads:} foundational Transformer, survey, FlashAttention family, LRA, CAB, BigBird, Performer
+    \item \textbf{Support skims:} Longformer, Linformer, Nystr\"{o}mformer
+\end{itemize}
+
+\subsection{Counts}
+
+\begin{itemize}
+    \item Found (initial): $\sim$60--100
+    \item Screened by title/abstract: $\sim$35--50
+    \item Screened by intro/experiments: $\sim$18--25
+    \item Kept for review matrix/map: 12 core/support papers
+    \item Deep/medium read: 9
+    \item Skim/support read: 3
+\end{itemize}
+
+
+% ============================================================
+% Section 3: Priority Plan for Literature Types
+% ============================================================
+\section{Priority Plan for Literature Types}
+
+A disciplined priority plan is necessary for this topic because the efficient attention literature is both fast-moving and fragmented. Different papers optimize different objectives (asymptotic complexity, wall-clock runtime, memory, accuracy retention, kernel practicality), and without a clear review order, the literature can appear inconsistent or contradictory. Therefore, this review prioritizes literature types in a sequence that supports a defensible novelty claim rather than a paper-by-paper summary.
+
+\subsection{Priority Order Used in This Review}
+
+\textbf{Priority 1: Foundational architecture / baseline theory.}
+The review begins with the original Transformer paper to establish the baseline self-attention mechanism, the source of the quadratic scaling issue, and stable terminology for attention, multi-head attention, and sequence modeling \parencite{vaswani2023attentionneed}. This is essential because all later efficient attention papers position themselves relative to standard scaled dot-product attention.
+
+\textbf{Priority 2: Survey / taxonomy literature.}
+The second priority is a high-quality survey of efficient Transformers, which provides a broad taxonomy of the solution space and helps avoid a narrow or cherry-picked review. The Efficient Transformers survey is especially valuable because it explicitly frames efficiency as multi-dimensional (memory and computation) and highlights the rapid growth of ``X-former'' variants \parencite{10.1145/3530811}.
+
+\textbf{Priority 3: Anchor method family (IO-aware exact attention).}
+The third priority is the main method family being investigated: FlashAttention and its successors. FlashAttention is central because it shifts the design lens from only FLOP reduction to IO-awareness and GPU memory hierarchy optimization, which aligns directly with the proposed research direction \parencite{dao2022flashattentionfastmemoryefficientexact}. FlashAttention-2 and FlashAttention-3 are then reviewed as evolutionary improvements in parallelism, work partitioning, and hardware-specific optimization \parencite{dao2023flashattention2fasterattentionbetter, shah2024flashattention3fastaccurateattention}.
+
+\textbf{Priority 4: Contrast method families (sparse and linear/approximate attention).}
+To avoid a biased review, the next priority is to include representative alternative philosophies---specifically sparse attention (BigBird; supported by Longformer) and linear/approximate attention (Performer; supported by Linformer and Nystr\"{o}mformer). These papers are not included merely as ``extra citations''; they are necessary to define the broader design space and to establish what kind of efficiency trade-offs FlashAttention does and does not address \parencite{zaheer2021bigbirdtransformerslonger, beltagy2020longformerlongdocumenttransformer, choromanski2022rethinkingattentionperformers, wang2020linformerselfattentionlinearcomplexity, xiong2021nystromformernystrombasedalgorithmapproximating}.
+
+\textbf{Priority 5: Benchmarking and evaluation frameworks.}
+Finally, the review prioritizes benchmark papers (LRA and CAB) because the novelty claim depends not only on method differences but also on evaluation gaps. LRA explicitly highlights the lack of consensus and inconsistent evaluation practices in efficient Transformers, while CAB extends attention benchmarking beyond LRA's limited attention-pattern coverage and reveals cross-pattern generalization issues \parencite{tay2020longrangearenabenchmark, zhang2025cabcomprehensiveattentionbenchmarking}.
+
+\subsection{Handling Outdated Work, Conflicting Results, and Noise}
+
+Older papers are retained only when they are canonical (e.g., Transformer baseline, early efficient attention representatives). Newer variants are included when they materially affect the systems or benchmarking argument (e.g., FlashAttention-3 for hardware-aware evolution). Conflicting findings are handled by comparing them through common evaluation dimensions (attention type, workload, metrics, hardware context) rather than by treating headline claims as directly comparable. Domain noise is controlled by excluding unrelated LLM efficiency subtopics (e.g., quantization-only or pruning-only work) unless they directly intersect attention kernel efficiency.
+
+
+% ============================================================
+% Section 4: Literature Map and Taxonomy of the Research Space
+% ============================================================
+\section{Literature Map and Taxonomy of the Research Space}
+
+The reviewed literature can be organized into a thematic taxonomy centered on how attention efficiency is achieved and how it is evaluated. A useful taxonomy for this review contains six categories: (1) foundational attention baseline, (2) survey/taxonomy literature, (3) IO-aware exact attention (FlashAttention family), (4) sparse attention methods, (5) linear/approximate attention methods, and (6) benchmarking/evaluation frameworks. This structure supports both conceptual clarity and downstream use in the gap matrix.
+
+At the foundation is the Transformer architecture, which establishes full self-attention as the baseline mechanism and introduces the computational pattern that later becomes the target of optimization and approximation efforts \parencite{vaswani2023attentionneed}. The Efficient Transformers survey then systematizes the space of efficiency-oriented Transformer variants and explicitly frames the problem in terms of computational and memory efficiency, particularly under long inputs \parencite{10.1145/3530811}. These two papers provide the conceptual baseline and taxonomy vocabulary for the rest of the review.
+
+The IO-aware exact attention cluster is represented by FlashAttention, FlashAttention-2, and FlashAttention-3. FlashAttention's core contribution is not an approximation of attention, but a reorganization of the exact computation to reduce memory traffic between HBM and on-chip SRAM through tiling and fused kernels, with explicit IO-complexity analysis \parencite{dao2022flashattentionfastmemoryefficientexact}. FlashAttention-2 extends this line by improving GPU work partitioning and occupancy, showing that even within the exact IO-aware family, systems-level design choices such as thread-block and warp partitioning materially affect performance \parencite{dao2023flashattention2fasterattentionbetter}. FlashAttention-3 further specializes the approach to newer hardware (Hopper), incorporating asynchrony and low precision (FP8) considerations, which demonstrates that attention efficiency is increasingly co-designed with GPU architecture features \parencite{shah2024flashattention3fastaccurateattention}.
+
+The sparse attention cluster includes BigBird and Longformer. These papers reduce the quadratic cost of attention by restricting the connectivity pattern rather than optimizing the full exact computation. BigBird combines global, local, and random attention patterns and emphasizes both empirical long-context capability and theoretical properties such as expressivity preservation under sparsity assumptions \parencite{zaheer2021bigbirdtransformerslonger}. Longformer uses local windowed attention with task-motivated global attention and positions itself as a practical drop-in replacement for long-document modeling and transfer settings, also emphasizing runtime/memory scaling behavior in long-sequence contexts \parencite{beltagy2020longformerlongdocumenttransformer}.
+
+The linear/approximate attention cluster includes Performer, Linformer, and Nystr\"{o}mformer. Performer proposes FAVOR+ to approximate softmax attention with linear time/space behavior and emphasizes theoretical approximation properties and broad empirical applicability \parencite{choromanski2022rethinkingattentionperformers}. Linformer argues for a low-rank approximation perspective on self-attention to obtain linear complexity and frames the problem directly as avoiding the quadratic bottleneck without major performance loss \parencite{wang2020linformerselfattentionlinearcomplexity}. Nystr\"{o}mformer adopts a landmark-based Nystr\"{o}m approximation to avoid explicit construction of the full attention matrix and reports favorable scaling and performance on long-sequence benchmarks \parencite{xiong2021nystromformernystrombasedalgorithmapproximating}. Together, these papers represent a distinct design philosophy from FlashAttention: they primarily alter or approximate the attention operator itself rather than preserve exactness and optimize memory movement.
+
+The benchmarking/evaluation cluster includes Long Range Arena (LRA) and CAB. LRA is a widely used benchmark that was introduced specifically because efficient Transformer papers were using inconsistent and often incomparable evaluation setups, making relative assessment difficult \parencite{tay2020longrangearenabenchmark}. CAB expands this benchmarking discussion by arguing that LRA focuses too narrowly on one attention setting and proposes a more comprehensive taxonomy-based benchmark with multiple attention patterns (noncausal/causal, self/cross), revealing performance inconsistency across patterns and introducing concepts such as ``efficiency length'' for more nuanced efficiency comparisons \parencite{zhang2025cabcomprehensiveattentionbenchmarking}.
+
+\subsection{Textual Literature Map}
+
+The map can be presented as follows:
+\begin{itemize}
+    \item \textbf{Transformer baseline} $\rightarrow$ defines full self-attention problem space
+    \item \textbf{Efficient Transformers Survey} $\rightarrow$ organizes solution families and efficiency criteria
+    \item \textbf{Method families diverge into:}
+    \begin{itemize}
+        \item IO-aware exact attention (FlashAttention $\rightarrow$ FlashAttention-2 $\rightarrow$ FlashAttention-3)
+        \item Sparse attention (Longformer, BigBird)
+        \item Linear/approximate attention (Linformer, Performer, Nystr\"{o}mformer)
+    \end{itemize}
+    \item \textbf{Benchmarking line} (LRA $\rightarrow$ CAB) evaluates and critiques comparison practices across method families
+\end{itemize}
+
+\subsection{Taxonomy Categories}
+
+\begin{enumerate}
+    \item Foundational Transformer attention
+    \item Efficient Transformer surveys / taxonomy papers
+    \item IO-aware exact attention kernels (FlashAttention family)
+    \item Sparse attention for long sequences
+    \item Linear/approximate attention methods
+    \item Benchmarks and evaluation frameworks (LRA/CAB)
+\end{enumerate}
+
+
+% ============================================================
+% Section 5: Gap Matrix and Novelty Positioning
+% ============================================================
+\section{Gap Matrix and Novelty Positioning}
+
+The literature shows clear progress in attention efficiency, but it also reveals a fragmented evaluation landscape that makes it difficult to determine when one method family is truly preferable over another in realistic settings. The most important pattern across the reviewed papers is that methods are often compared under different hardware, sequence lengths, tasks, and metrics, which weakens the strength of cross-paper claims about ``efficiency'' and ``practical speedup'' \parencite{tay2020longrangearenabenchmark, zhang2025cabcomprehensiveattentionbenchmarking}. This is especially important for a systems-oriented research question, because the central claim of FlashAttention is explicitly about IO-awareness and wall-clock behavior rather than asymptotic complexity alone \parencite{dao2022flashattentionfastmemoryefficientexact}.
+
+A second gap is the mismatch between algorithmic complexity claims and real hardware-dependent performance behavior. Sparse and linear methods typically emphasize sub-quadratic complexity and scalability, but their practical efficiency gains may depend strongly on implementation quality, kernel support, and workload characteristics \parencite{choromanski2022rethinkingattentionperformers, wang2020linformerselfattentionlinearcomplexity, xiong2021nystromformernystrombasedalgorithmapproximating}. Conversely, the FlashAttention line retains exact attention but derives speed and memory benefits through systems optimization, and newer variants (FlashAttention-2/3) further show that utilization and performance are tied to GPU-specific work partitioning and hardware features \parencite{dao2023flashattention2fasterattentionbetter, shah2024flashattention3fastaccurateattention}. This means the field still lacks clear, reproducible studies that identify the crossover regime (sequence lengths/hardware settings) where exact IO-aware attention becomes preferable to standard attention and how that comparison should be reported consistently.
+
+A third gap is that benchmark design itself remains under active debate. LRA helped standardize long-context evaluation, but CAB shows that LRA omits important attention patterns (e.g., cross and causal combinations), which can mask generalization weaknesses and distort method rankings depending on the task pattern being evaluated \parencite{tay2020longrangearenabenchmark, zhang2025cabcomprehensiveattentionbenchmarking}. This creates both a challenge and an opportunity: the study must be modest in scope, but it can still contribute by being methodologically explicit and fair in the selected setting (e.g., single-GPU, exact attention baselines, controlled sequence lengths, transparent metrics).
+
+\subsection{Condensed Gap Matrix}
+
+\begin{singlespace}
+\small
+\begin{longtable}{>{\raggedright\arraybackslash}p{2cm} >{\raggedright\arraybackslash}p{2cm} >{\raggedright\arraybackslash}p{2cm} >{\raggedright\arraybackslash}p{2.5cm} >{\raggedright\arraybackslash}p{2cm} >{\raggedright\arraybackslash}p{2.5cm}}
+\toprule
+\textbf{Paper / System} & \textbf{Method Type} & \textbf{Primary Goal} & \textbf{Evaluation Scope} & \textbf{Metrics Emphasized} & \textbf{Key Limitation} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Paper / System} & \textbf{Method Type} & \textbf{Primary Goal} & \textbf{Evaluation Scope} & \textbf{Metrics Emphasized} & \textbf{Key Limitation} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+Attention Is All You Need & Baseline (full attention) & Sequence modeling via self-attention & MT tasks & BLEU, training cost & Not designed for long-context efficiency analysis \\
+\midrule
+Efficient Transformers Survey & Survey / taxonomy & Organize efficient Transformer variants & Multi-paper synthesis & Taxonomy-level discussion & Not an empirical benchmark itself \\
+\midrule
+FlashAttention (v1) & Exact, IO-aware & Reduce HBM traffic, exact attention speed/memory & Kernel + end-to-end examples & Runtime speedup, memory, IO complexity & Hardware/kernel-specific implementation assumptions \\
+\midrule
+FlashAttention-2 & Exact, IO-aware (improved parallelism) & Better GPU work partitioning/occupancy & A100-oriented performance & Speedup, FLOPs utilization & Still hardware- and implementation-dependent \\
+\midrule
+FlashAttention-3 & Exact, IO-aware, hardware-specific & Hopper-specific asynchrony + FP8 & H100-focused & TFLOPs/s, utilization, numerical error & New hardware dependence limits generality \\
+\midrule
+BigBird & Sparse attention & Linear complexity sparse pattern with theory + long context & NLP tasks incl. long-context & Task performance, longer context capability & Comparisons not directly aligned with kernel-level systems metrics \\
+\midrule
+Longformer & Sparse attention & Practical long-document attention & LM + downstream long-doc tasks & Runtime/memory scaling, task scores & Task-specific/global attention design may affect comparability \\
+\midrule
+Performer & Linear/approx attention & Linear attention via FAVOR+ approximation & Diverse tasks & Efficiency + quality tradeoff & Approximation quality and setup sensitivity \\
+\midrule
+Linformer & Linear/low-rank approx & $O(n)$ via low-rank projection & Transformer tasks & Time/space efficiency and quality & Assumption of low-rank approximability may vary by task \\
+\midrule
+Nystr\"{o}mformer & Linear/Nystr\"{o}m approx & $O(n)$ softmax approximation & GLUE + LRA-like long tasks & Efficiency and task performance & Approximation quality depends on landmark design \\
+\midrule
+LRA & Benchmark & Unified long-context testbed & Long-sequence tasks & Model quality on benchmark tasks & Limited attention-pattern coverage \\
+\midrule
+CAB & Benchmark & Broader attention-pattern benchmarking & Multi-pattern, multi-domain tasks & Performance across attention patterns, efficiency length & More complex benchmark may raise reproduction cost \\
+
+\end{longtable}
+\end{singlespace}
+
+\subsection{Top 3 Gaps Identified}
+
+\begin{enumerate}
+    \item \textbf{Inconsistent cross-paper comparisons:} Cross-paper efficiency claims are hard to compare fairly due to inconsistent workloads, hardware, and metrics (especially across exact vs sparse vs linear families).
+    \item \textbf{Underreported crossover behavior:} Many papers report gains, but fewer studies isolate \emph{when} (sequence length, hardware setting) exact IO-aware attention surpasses standard attention in a controlled single-GPU setup.
+    \item \textbf{Incomplete benchmark coverage:} Benchmark coverage remains incomplete or context-dependent, as LRA and CAB emphasize different aspects of attention functionality and can produce different conclusions about method quality/generalization.
+\end{enumerate}
+
+\subsection{Which Gap This Study Claims}
+
+This study will claim the \textbf{second gap}, supported by the first: a controlled, transparent single-GPU evaluation of exact IO-aware attention (FlashAttention family vs standard attention baseline), with explicit reporting of sequence-length-dependent runtime and memory crossover behavior, and benchmark/reporting choices informed by LRA/CAB limitations.
+
+\subsection{Why It Matters}
+
+This matters because many researchers and practitioners---especially those in smaller labs with limited compute---need decision guidance about whether to adopt exact IO-aware kernels or alternative efficient attention designs under limited compute conditions. A methodologically careful comparison can improve reproducibility and reduce ambiguity in future efficiency claims.
+
+
+% ============================================================
+% Section 6: Comparative Abstracts and Mini-Synthesis
+% ============================================================
+\section{Comparative Abstracts and Mini-Synthesis}
+
+Below are two comparative abstracts: one for the closest competitor (FlashAttention-2 within the same method family) and one for a different approach (Performer, linear approximation family).
+
+\subsection{Abstract 1: FlashAttention-2}
+
+FlashAttention-2 extends the original FlashAttention approach by improving the parallel execution strategy of exact attention on GPUs rather than changing the attention function itself. Building on FlashAttention's IO-aware design, the paper argues that the first version still underutilizes GPU compute due to suboptimal work partitioning across thread blocks and warps. The authors redesign the kernel-level work decomposition to reduce non-matmul overhead, improve occupancy, and distribute work more effectively within and across thread blocks. The paper reports approximately 2$\times$ speedup over FlashAttention in key settings and improved utilization on A100 GPUs, while preserving exact attention outputs. Importantly, the contribution is systems-oriented: the main advance is not a new approximation or sparsity pattern, but a more efficient mapping of the same exact attention computation onto GPU hardware resources \parencite{dao2023flashattention2fasterattentionbetter}.
+
+\subsection{Abstract 2: Performer}
+
+Performer proposes a fundamentally different route to efficient attention by approximating softmax attention using kernel methods rather than preserving exact attention and optimizing memory traffic. The paper introduces FAVOR+, a random feature-based mechanism designed to estimate attention with linear time and space complexity while providing theoretical guarantees related to approximation quality. Unlike sparse methods that impose structural priors and unlike FlashAttention-style exact kernel optimization, Performer focuses on a scalable approximation of regular attention that remains broadly compatible with Transformer architectures. The authors evaluate the method across multiple task types and report competitive results relative to other efficient attention approaches, positioning Performer as a general-purpose linear-attention alternative. Its contribution is therefore primarily algorithmic and approximation-theoretic, with practical efficiency framed through reduced asymptotic complexity and scalable implementation rather than exact IO-aware GPU kernel optimization \parencite{choromanski2022rethinkingattentionperformers}.
+
+\subsection{Mini-Synthesis}
+
+These two papers represent distinct philosophies for addressing attention inefficiency. FlashAttention-2 preserves exact attention and seeks speed/memory gains through GPU-aware kernel engineering and improved parallel work partitioning, while Performer modifies the attention computation itself to obtain linear complexity through approximation. Together, they show that ``efficient attention'' is not a single category but a family of approaches with different trade-offs in exactness, hardware dependence, and evaluation style. What remains insufficiently resolved in the literature is a consistent, practically reproducible comparison framework that identifies when exact IO-aware optimization is preferable to approximation-based methods under controlled hardware and sequence-length conditions. This unresolved comparison problem is central to the proposed research direction and directly motivates the gap matrix and novelty claim in this review \parencite{dao2023flashattention2fasterattentionbetter, choromanski2022rethinkingattentionperformers, tay2020longrangearenabenchmark, zhang2025cabcomprehensiveattentionbenchmarking}.
+
+
+% ============================================================
+% Section 7: Glossary of Key Terms (Operational Definitions)
+% ============================================================
+\section{Glossary of Key Terms (Operational Definitions)}
+
+\begin{enumerate}
+
+\item \textbf{Self-attention} \\
+\textit{Definition:} A mechanism in Transformers where each token computes a weighted combination of other tokens' representations based on query-key similarity. Introduced as a core component of the Transformer architecture \parencite{vaswani2023attentionneed}. \\
+\textit{Operational interpretation:} The computation under test; measured primarily by runtime and memory behavior as sequence length increases.
+
+\item \textbf{Quadratic complexity (in sequence length)} \\
+\textit{Definition:} The standard self-attention mechanism scales approximately as $O(n^2)$ in time/memory with respect to sequence length $n$, due to pairwise token interactions \parencite{10.1145/3530811, dao2022flashattentionfastmemoryefficientexact}. \\
+\textit{Operational interpretation:} Used to justify why long-context evaluation is necessary; not treated alone as a performance metric.
+
+\item \textbf{Efficient attention} \\
+\textit{Definition:} A broad class of attention methods designed to reduce computational and/or memory costs relative to standard full attention, including sparse, low-rank, kernel-based, and systems-optimized exact methods \parencite{10.1145/3530811}. \\
+\textit{Operational interpretation:} Taxonomy umbrella for all compared methods in the literature map and gap matrix.
+
+\item \textbf{IO-awareness} \\
+\textit{Definition:} A design principle that explicitly optimizes data movement across memory hierarchy levels (e.g., HBM and SRAM), not just arithmetic operations/FLOPs; central to FlashAttention \parencite{dao2022flashattentionfastmemoryefficientexact}. \\
+\textit{Operational interpretation:} The core systems concept motivating the proposed study; evaluated indirectly via runtime and memory behavior.
+
+\item \textbf{HBM (High Bandwidth Memory)} \\
+\textit{Definition:} GPU global memory with high bandwidth but higher access cost than on-chip memory; FlashAttention emphasizes minimizing HBM reads/writes during attention computation \parencite{dao2022flashattentionfastmemoryefficientexact}. \\
+\textit{Operational interpretation:} Memory level whose traffic is treated as a major bottleneck in exact attention performance.
+
+\item \textbf{SRAM (on-chip shared memory / fast memory)} \\
+\textit{Definition:} Fast, limited-capacity memory on the GPU chip used in tiled kernels to improve locality and reduce global memory traffic; central to FlashAttention's tiling strategy \parencite{dao2022flashattentionfastmemoryefficientexact}. \\
+\textit{Operational interpretation:} The target memory region for block-wise attention computation in IO-aware exact kernels.
+
+\item \textbf{Tiling (blocked computation)} \\
+\textit{Definition:} A technique that divides large computations into smaller blocks that fit in fast memory, enabling reuse and reduced memory traffic; used by FlashAttention to avoid materializing the full attention matrix in HBM \parencite{dao2022flashattentionfastmemoryefficientexact}. \\
+\textit{Operational interpretation:} The primary kernel-level mechanism underlying exact memory-efficient attention.
+
+\item \textbf{Sparse attention} \\
+\textit{Definition:} Attention methods that restrict token-to-token connectivity patterns (e.g., local, global, random) to reduce compute/memory complexity, as seen in BigBird and Longformer \parencite{zaheer2021bigbirdtransformerslonger, beltagy2020longformerlongdocumenttransformer}. \\
+\textit{Operational interpretation:} A contrast method family in the taxonomy and gap matrix, not the primary experimental focus.
+
+\item \textbf{Linear/approximate attention} \\
+\textit{Definition:} Methods that approximate self-attention (e.g., low-rank or kernel approximations) to achieve near-linear or linear complexity in sequence length, such as Performer, Linformer, and Nystr\"{o}mformer \parencite{choromanski2022rethinkingattentionperformers, wang2020linformerselfattentionlinearcomplexity, xiong2021nystromformernystrombasedalgorithmapproximating}. \\
+\textit{Operational interpretation:} A second contrast family used for novelty positioning and comparative synthesis.
+
+\item \textbf{Long-context sequence modeling} \\
+\textit{Definition:} Modeling tasks where input lengths are large enough that standard full attention becomes memory/runtime constrained; a motivating domain for efficient attention and benchmarks like LRA/CAB \parencite{tay2020longrangearenabenchmark, zhang2025cabcomprehensiveattentionbenchmarking}. \\
+\textit{Operational interpretation:} The scenario under which runtime/memory comparisons are considered meaningful.
+
+\item \textbf{Benchmarking (for efficient attention)} \\
+\textit{Definition:} The systematic evaluation of attention methods under a defined suite of tasks, architectures, and metrics; LRA and CAB show that benchmark design materially shapes conclusions about method quality \parencite{tay2020longrangearenabenchmark, zhang2025cabcomprehensiveattentionbenchmarking}. \\
+\textit{Operational interpretation:} A research design issue, not just a reporting formality; directly incorporated into the gap statement.
+
+\item \textbf{Efficiency length (CAB)} \\
+\textit{Definition:} A CAB-introduced notion referring to the minimum sequence length at which a sub-quadratic efficient model surpasses vanilla attention in efficiency, highlighting that ``efficient'' methods may not be practically efficient at shorter lengths \parencite{zhang2025cabcomprehensiveattentionbenchmarking}. \\
+\textit{Operational interpretation:} A useful concept for framing crossover analysis in future experiments.
+
+\end{enumerate}
+
+
+% ============================================================
+% Section 8: Related Work
+% ============================================================
+\section{Related Work}
+
+The literature on efficient attention for Transformers can be organized around a central tension: the original self-attention mechanism provides strong modeling capability and parallelism, but its quadratic time and memory behavior with respect to sequence length limits practical scalability for long-context workloads \parencite{vaswani2023attentionneed, 10.1145/3530811}. This tension has motivated a broad family of methods often grouped under the umbrella of ``efficient Transformers,'' but these methods differ significantly in what they optimize---some alter the attention operator itself (e.g., sparse or linear approximations), while others preserve exact attention and instead optimize execution at the systems/kernel level \parencite{10.1145/3530811}.
+
+A first line of work reduces attention cost through \textbf{structural sparsity}. In this family, methods constrain which tokens may attend to one another so that the full $n \times n$ interaction pattern is not computed. BigBird is a representative example, combining global, local, and random attention patterns to obtain linear complexity while also arguing for preserved theoretical properties and improved long-context capability on tasks such as question answering and summarization \parencite{zaheer2021bigbirdtransformerslonger}. Longformer similarly reduces complexity using local window attention plus task-motivated global attention, and emphasizes practical long-document NLP settings, including finetuning and transfer from pretrained models \parencite{beltagy2020longformerlongdocumenttransformer}. These methods show that sparse patterns can enable longer contexts and competitive task performance, but their practical gains depend on the task, attention pattern design, and implementation efficiency.
+
+A second major line of work pursues \textbf{linear or approximate attention}, where the attention computation is approximated to avoid quadratic scaling. Linformer adopts a low-rank approximation perspective, arguing that self-attention can be projected to obtain linear time and memory behavior while retaining strong performance in many settings \parencite{wang2020linformerselfattentionlinearcomplexity}. Nystr\"{o}mformer uses landmark-based approximation (Nystr\"{o}m method) to reconstruct the attention matrix more efficiently and reports favorable performance on both standard and long-range tasks \parencite{xiong2021nystromformernystrombasedalgorithmapproximating}. Performer introduces FAVOR+, a kernel-based approximation approach with theoretical guarantees, positioning itself as a general and scalable linear-attention alternative without relying on sparsity priors \parencite{choromanski2022rethinkingattentionperformers}. Collectively, these methods demonstrate that substantial asymptotic improvements are possible, but they also introduce approximation assumptions and evaluation dependencies that complicate direct comparison to exact methods.
+
+A third, increasingly important line of work focuses on \textbf{exact attention with systems-level optimization}, particularly for GPUs. FlashAttention marks a significant shift in framing by arguing that many prior methods overemphasize FLOP reduction while underestimating the role of memory access costs in wall-clock performance. Rather than approximating attention, FlashAttention preserves exact attention and redesigns the computation to be IO-aware, using tiling and fused kernels to reduce reads/writes between HBM and on-chip SRAM and avoid materializing the full attention matrix in slow memory \parencite{dao2022flashattentionfastmemoryefficientexact}. FlashAttention-2 extends this perspective by improving parallelism and work partitioning, showing that occupancy and intra-kernel communication overheads still limit performance even after IO-aware tiling is adopted \parencite{dao2023flashattention2fasterattentionbetter}. FlashAttention-3 further demonstrates that exact attention performance is strongly hardware-dependent, incorporating Hopper-specific features such as asynchrony and low precision (FP8) to substantially improve utilization and throughput on H100 GPUs \parencite{shah2024flashattention3fastaccurateattention}. This progression suggests that exact attention remains highly competitive when systems-level design is treated as a first-class research problem.
+
+Alongside method development, the field has also evolved in its understanding of \textbf{benchmarking and evaluation validity}. Long Range Arena (LRA) was introduced in response to a lack of consensus and inconsistent evaluation practices across efficient Transformer papers, aiming to provide a unified long-context benchmark suite for comparing many ``xformer'' variants \parencite{tay2020longrangearenabenchmark}. However, subsequent work has shown that benchmark design itself can constrain conclusions. CAB argues that LRA focuses primarily on a narrow attention setting and omits other important attention patterns (e.g., causal and cross attention variants), then proposes a broader taxonomy-driven benchmark and reports that efficient attention performance can vary substantially across patterns and backbones \parencite{zhang2025cabcomprehensiveattentionbenchmarking}. CAB also introduces the idea of ``efficiency length,'' highlighting that some sub-quadratic methods may not outperform vanilla attention until sequence lengths are sufficiently large, which complicates blanket efficiency claims \parencite{zhang2025cabcomprehensiveattentionbenchmarking}.
+
+Taken together, the literature demonstrates substantial progress in efficient attention, but it does not yet provide a universally accepted answer to a practical systems question: \emph{when and under what conditions should a researcher prefer exact IO-aware attention over standard attention or over approximate/sparse alternatives?} Existing work demonstrates strong gains within individual method families; however, it often fails to provide controlled, transparent, and hardware-explicit cross-family comparisons that are reproducible in modest research environments. This limitation is particularly important for single-GPU experimental settings and for research that seeks defensible, measurable outcomes without large-scale pretraining.
+
+\subsection{Novelty Statement}
+
+Existing work demonstrates that efficient attention can be improved through multiple strategies, including sparse connectivity (e.g., BigBird, Longformer), linear/approximate attention (e.g., Performer, Linformer, Nystr\"{o}mformer), and exact IO-aware kernel optimization (FlashAttention family); however, the literature does not consistently establish when exact IO-aware attention surpasses standard attention under controlled single-GPU conditions, nor does it provide sufficiently uniform reporting across method families and benchmark settings to support clear practical decision-making \parencite{zaheer2021bigbirdtransformerslonger, beltagy2020longformerlongdocumenttransformer, choromanski2022rethinkingattentionperformers, dao2022flashattentionfastmemoryefficientexact, tay2020longrangearenabenchmark, zhang2025cabcomprehensiveattentionbenchmarking}. Therefore, this study will evaluate exact IO-aware attention (FlashAttention family vs standard attention baseline) under explicitly controlled sequence-length and hardware conditions, using runtime and memory metrics (and, where possible, utilization indicators) to identify crossover regimes and produce a reproducible efficiency comparison framework suitable for future pilot experiments.
+
+
+% ============================================================
+% Section 9: References
+% ============================================================
+\nocite{*}
+\printbibliography[heading=bibnumbered, title={References}]
+
+
+% ============================================================
+% Section 10: AI Usage Log
+% ============================================================
+\section{AI Usage Log}
+
+\begin{itemize}
+    \item \textbf{ChatGPT} -- Finding research papers related to topic I want to research on.
+    \item \textbf{Claude Code} -- Generating LaTeX file format for Literature Review document.
+    \item \textbf{ChatGPT} -- Understanding of basic terms of LLMs.
+    \item \textbf{NotebookLM} -- Used to ask questions based on the research papers collected.
+    \item \textbf{ChatGPT} -- To understand each paper that was reviewed, 12 in total; the rest are mentioned in references for collection of resources.
+    \item \textbf{ChatGPT} -- Understand the actual gaps mentioned in each paper and compare them across other papers.
+    \item \textbf{ChatGPT} -- Understand the grouping of each paper in terms of what part of the solution it solves.
+    \item \textbf{Claude Code} -- Convert the text into LaTeX formatting.
+    \item \textbf{ChatGPT} -- Check for any problems associated with each paper and suggest paper title names.
+\end{itemize}
+
+\end{document}
