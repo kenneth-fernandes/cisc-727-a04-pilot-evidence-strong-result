@@ -1,0 +1,180 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{booktabs}
+
+\geometry{margin=1in}
+\doublespacing
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\begin{document}
+
+% ============================================================
+% Title Page
+% ============================================================
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\LARGE \textbf{Interpretation} \par}
+    \vspace{1cm}
+    {\large CISC-727: Advanced Research Explorations (ARE) - I \par}
+    \vspace{0.5cm}
+    {\large Assignment A04 \par}
+    \vspace{1.5cm}
+    {\large\itshape FlashAttention Speedup Under Multi-GPU Communication Overhead: DDP vs FSDP \par}
+    \vspace{2cm}
+    {\large Kenneth Peter Fernandes \par}
+    \vspace{0.5cm}
+    {\large Harrisburg University of Science and Technology \par}
+    \vspace{1cm}
+    {\large \textbf{Instructor:} Professor Majid Shaalan, PhD \par}
+    \vspace{1cm}
+    {\large Spring 2026 \par}
+\end{titlepage}
+
+% ============================================================
+% 1. What Changed (the Lever)
+% ============================================================
+\section{What Changed (the Lever)}
+
+\textbf{Lever category:} Parallelization --- partition granularity change.
+
+We changed the ViT-Small patch size from 16 to 4 on CIFAR-10 (32$\times$32 images). This increases the sequence length from 5 tokens (4 patches + 1 CLS) to 65 tokens (64 patches + 1 CLS), and the attention matrix from 5$\times$5 to 65$\times$65.
+
+\textbf{Connection to A02 gap:} The A02 literature review identified that FlashAttention's speedup under multi-GPU communication overhead is underexplored. However, the A03 pilot revealed a prerequisite: FlashAttention must first show a baseline speedup before the communication-overhead modulation effect can be tested. With patch\_size=16, the attention matrix was small enough to fit entirely in GPU SRAM, eliminating the HBM traffic that FlashAttention is designed to reduce. Increasing partition granularity (smaller patches, longer sequences) is the minimal change needed to activate FlashAttention's tiling benefit and enable the core hypothesis test.
+
+All other variables were held constant: same model architecture (ViT-Small, embed\_dim=384, 6 heads, 12 layers), same dataset (CIFAR-10), same batch size (64 per GPU), same training steps (100), same seed (42), same hardware (Kaggle 2$\times$ T4 via PCIe), same parallelization strategy (DDP), and same precision (float32).
+
+% ============================================================
+% 2. What You Predicted
+% ============================================================
+\section{What You Predicted}
+
+\textbf{Prediction:} With patch\_size=4 (65 tokens), FlashAttention should show a measurable speedup over standard attention, unlike the null result observed with patch\_size=16 (5 tokens) in A03. We predicted approximately 5--15\% faster time per step.
+
+\textbf{PCAM grounding:}
+\begin{itemize}
+    \item \textbf{Partitioning:} Finer patches (4$\times$4 vs 16$\times$16) partition the input image into 64 tokens instead of 4. Each attention head now computes a 65$\times$65 attention matrix instead of 5$\times$5---a 169$\times$ increase in attention computation per head.
+    \item \textbf{Communication:} The attention matrix no longer fits in a single SRAM tile. Standard attention must read/write the full 65$\times$65 matrix to HBM, while FlashAttention tiles this into SRAM-sized blocks, reducing HBM traffic.
+    \item \textbf{Agglomeration:} FlashAttention fuses the softmax, matrix multiply, and dropout into a single kernel pass, avoiding intermediate materialization to HBM. This benefit is negligible at 5$\times$5 but should become measurable at 65$\times$65.
+    \item \textbf{Mapping:} No change---same 2$\times$ T4 GPUs, same DDP strategy.
+\end{itemize}
+
+\textbf{Work--Depth reasoning:}
+\begin{itemize}
+    \item \textbf{Critical path:} The attention computation becomes a larger fraction of total step time at 65 tokens, amplifying any kernel-level speedup.
+    \item \textbf{Expected effect:} FlashAttention relative speedup should be positive (we predicted approximately 5--15\% faster time per step), whereas A03 showed $\sim$0\% at 5 tokens.
+\end{itemize}
+
+% ============================================================
+% 3. What Happened
+% ============================================================
+\section{What Happened}
+
+The prediction was \textbf{contradicted}. FlashAttention did not produce a speedup at 65 tokens---it was substantially \textbf{slower} than standard attention.
+
+\begin{table}[h]
+\centering
+\caption{Summary of experimental results across all four configurations.}
+\label{tab:results}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Run ID} & \textbf{Patch} & \textbf{Seq Len} & \textbf{Attention} & \textbf{Median Time/Step (s)} & \textbf{Throughput (s/s)} \\
+\midrule
+R1-baseline-std   & 16 & 5  & math  & 0.0601 & 2131.3 \\
+R1-baseline-flash & 16 & 5  & flash & 0.0598 & 2141.5 \\
+R2-variant-std    & 4  & 65 & math  & 0.2209 & 579.5  \\
+R2-variant-flash  & 4  & 65 & flash & 0.2570 & 498.1  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{FlashAttention relative speedup:}
+\begin{itemize}
+    \item Baseline (patch\_size=16, seq=5): \textbf{+0.48\%} --- within noise ($\pm$5\% threshold), confirming A03's null result.
+    \item Variant (patch\_size=4, seq=65): \textbf{$-$16.34\%} --- FlashAttention is 16\% \textit{slower} than standard attention.
+\end{itemize}
+
+The step time breakdown (Figure~2) shows that FlashAttention at 65 tokens has both a slower forward pass (0.0775s vs 0.0653s, +18.7\%) and a slower backward pass (0.1718s vs 0.1478s, +16.2\%) compared to standard attention.
+
+% ============================================================
+% 4. Mechanism Explanation
+% ============================================================
+\section{Mechanism Explanation}
+
+The most plausible mechanism is that \textbf{65 tokens is still below FlashAttention's efficiency crossover threshold on the T4 GPU}. FlashAttention's tiling strategy introduces kernel launch overhead and additional index computation that is amortized at long sequences (typically 512+ tokens in published benchmarks) but dominates at short sequences. At 65 tokens:
+
+\begin{itemize}
+    \item The 65$\times$65 attention matrix (4,225 elements per head, 6 heads = 25,350 elements total) is small enough that standard attention's simple GEMM + softmax kernels are highly efficient. The matrix likely still fits or nearly fits in SRAM/L2 cache on the T4.
+    \item FlashAttention's tiled algorithm requires multiple passes and block-level online softmax computation. For small attention matrices, this extra bookkeeping is not offset by HBM traffic savings because there is minimal HBM traffic to save.
+    \item The T4's compute architecture (Turing, 65 SMs, 320 GB/s memory bandwidth) is not optimized for FlashAttention---the original FlashAttention kernels were developed and tuned for Ampere (A100) and later architectures. The SDPA flash backend on T4 may use a less optimized kernel path.
+\end{itemize}
+
+The forward pass slowdown (+18.7\%) and backward pass slowdown (+16.2\%) are consistent across the training step, indicating this is a per-kernel overhead rather than a one-time setup cost.
+
+% ============================================================
+% 5. Alternative Explanations
+% ============================================================
+\section{Alternative Explanations}
+
+\subsection{Alternative 1: SDPA Backend Dispatch Mismatch}
+
+PyTorch's \texttt{scaled\_dot\_product\_attention} dispatcher may not be selecting the true FlashAttention kernel on T4 hardware. The T4 (compute capability 7.5, Turing) may not support the FlashAttention CUDA kernel, causing PyTorch to fall back to a different (potentially less efficient) kernel while still reporting the ``flash'' backend. This could be verified by profiling with \texttt{torch.profiler} or checking \texttt{torch.backends.cuda.flash\_sdp\_enabled()} and inspecting which kernel actually executes via NVIDIA Nsight or \texttt{TORCH\_SHOW\_DISPATCH\_TRACE}.
+
+\subsection{Alternative 2: Compute-Bound Regime at 65 Tokens}
+
+At 65 tokens, the attention computation may be \textbf{compute-bound} rather than memory-bandwidth-bound. FlashAttention's primary advantage is reducing HBM traffic (memory-bound workloads). If the 65$\times$65 attention matrix computation is bottlenecked by arithmetic throughput rather than memory bandwidth, FlashAttention's IO-aware tiling provides no benefit while adding algorithmic overhead. This could be tested by profiling achieved memory bandwidth vs peak bandwidth using \texttt{torch.profiler} with \texttt{profile\_memory=True}, or by running the same experiment at sequence lengths of 256, 512, and 1024 to find the crossover point where FlashAttention becomes beneficial.
+
+% ============================================================
+% 6. Threats to Validity
+% ============================================================
+\section{Threats to Validity}
+
+\begin{itemize}
+    \item \textbf{Sequence length still short:} 65 tokens is far below the 512--4096+ range where FlashAttention benchmarks typically demonstrate advantages. This experiment tests the low end of FlashAttention's operating regime, not its sweet spot.
+
+    \item \textbf{T4 hardware limitations:} The T4 (Turing architecture) may not have full FlashAttention kernel support via PyTorch's SDPA. Published FlashAttention benchmarks primarily target A100/H100 (Ampere/Hopper). Results may not transfer to newer hardware.
+
+    \item \textbf{Patch size confound:} Changing patch\_size from 16 to 4 does not only change sequence length---it also changes the patch embedding layer. With patch\_size=16, the Conv2d projects 16$\times$16$\times$3=768 input dims to 384; with patch\_size=4, it projects 4$\times$4$\times$3=48 input dims to 384. This changes the embedding computation, though the attention layers (which are the target of FlashAttention) remain architecturally identical.
+
+    \item \textbf{Kaggle shared infrastructure:} Kaggle notebooks run on shared hardware. Other users' workloads could introduce timing variability. However, the 3-repetition median approach and the consistent direction of the effect ($-$16.34\% with low standard deviation of 0.0075s) mitigate this concern.
+
+    \item \textbf{DDP communication noise:} PCIe interconnect introduces high communication overhead. The communication portion of step time could mask or amplify attention kernel differences, though the breakdown shows the slowdown is in forward and backward passes specifically, not in the communication/optimizer phase.
+
+    \item \textbf{Limited repetitions:} Three repetitions provide a median but cannot establish tight confidence intervals. More repetitions would strengthen the finding.
+\end{itemize}
+
+% ============================================================
+% 7. Conclusion Discipline
+% ============================================================
+\section{Conclusion Discipline}
+
+\textbf{What this evidence supports:}
+\begin{itemize}
+    \item At 65 tokens on T4 GPUs under DDP, FlashAttention (via PyTorch SDPA) is measurably \textbf{slower} ($-$16.34\%) than standard math-based attention. The effect is consistent across 3 repetitions and appears in both forward and backward passes.
+    \item The sequence length of 65 is insufficient to activate FlashAttention's efficiency advantage on this hardware. Combined with the A03 null result at 5 tokens, this suggests the T4 crossover threshold is above 65 tokens.
+    \item The ``efficiency crossover'' concept from the A02 literature review (CAB benchmark) is empirically confirmed: FlashAttention has a minimum sequence length below which it is not beneficial, and this threshold is hardware-dependent.
+\end{itemize}
+
+\textbf{What this evidence does NOT support:}
+\begin{itemize}
+    \item We \textbf{cannot} claim that FlashAttention is generally slower than standard attention---only at this specific sequence length on T4 hardware.
+    \item We \textbf{cannot} test the original A02 hypothesis (does communication overhead modulate FlashAttention's speedup?) because FlashAttention has not yet shown a speedup to modulate. The DDP-vs-FSDP comparison remains untestable until a sequence length is found where FlashAttention is beneficial.
+    \item We \textbf{cannot} generalize to A100/H100 hardware, where FlashAttention kernels are better optimized and the crossover threshold may be much lower.
+    \item We \textbf{cannot} isolate sequence length as the sole cause, since the patch\_size change also modified the embedding layer.
+\end{itemize}
+
+\end{document}

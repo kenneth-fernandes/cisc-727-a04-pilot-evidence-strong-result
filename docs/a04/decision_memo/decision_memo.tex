@@ -1,0 +1,103 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{enumitem}
+
+\geometry{margin=1in}
+\doublespacing
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\begin{document}
+
+% ============================================================
+% Title Page
+% ============================================================
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\LARGE \textbf{Next-Step Decision Memo} \par}
+    \vspace{1cm}
+    {\large CISC-727: Advanced Research Explorations (ARE) - I \par}
+    \vspace{0.5cm}
+    {\large Assignment A04 \par}
+    \vspace{1.5cm}
+    {\large\itshape FlashAttention Speedup Under Multi-GPU Communication Overhead: DDP vs FSDP \par}
+    \vspace{2cm}
+    {\large Kenneth Peter Fernandes \par}
+    \vspace{0.5cm}
+    {\large Harrisburg University of Science and Technology \par}
+    \vspace{1cm}
+    {\large \textbf{Instructor:} Professor Majid Shaalan, PhD \par}
+    \vspace{1cm}
+    {\large Spring 2026 \par}
+\end{titlepage}
+
+% ============================================================
+% Decision
+% ============================================================
+\section{Decision}
+
+\textbf{Decision: Narrow.}
+
+The research direction remains valid, but the experimental design must be narrowed to address the sequence-length prerequisite before the core hypothesis (communication-overhead modulation of FlashAttention's speedup) can be tested.
+
+% ============================================================
+% Rationale
+% ============================================================
+\section{Rationale}
+
+The A04 experiment produced a clear, interpretable negative result: FlashAttention is 16.34\% \textit{slower} than standard attention at 65 tokens on T4 GPUs under DDP. Combined with the A03 null result at 5 tokens, we now have two data points confirming that FlashAttention's efficiency crossover threshold on T4 hardware is above 65 tokens.
+
+This does \textit{not} invalidate the A02 gap---it refines it. The original question (does communication overhead modulate FlashAttention's speedup?) remains unanswered because the prerequisite condition (FlashAttention showing a speedup) has not been met. The evidence points to a clear next step: increase sequence length substantially (512+ tokens) by switching to an NLP workload, or test on hardware (A100) where FlashAttention's crossover threshold is lower.
+
+The direction is not wrong---it is under-scoped. Narrowing to a workload and hardware combination where FlashAttention is known to be beneficial will allow the core hypothesis to be tested in ARE-II.
+
+% ============================================================
+% ARE-II Next Steps (3-5 bullets)
+% ============================================================
+\section{ARE-II Next Steps}
+
+\begin{enumerate}
+    \item \textbf{Switch to a long-sequence NLP workload.} Replace ViT-Small on CIFAR-10 with a GPT-2 style model on WikiText-103, using sequence lengths of 512, 1024, and 2048 tokens. This places the experiment well above the FlashAttention crossover threshold documented in published benchmarks (typically 256+ on A100, likely higher on T4). This is the highest-priority change.
+
+    \item \textbf{Verify FlashAttention speedup on single GPU first.} Before testing DDP vs FSDP modulation, confirm that FlashAttention shows a measurable speedup ($>$5\%) on a single T4 GPU at the chosen sequence length. This avoids repeating the A03/A04 pattern of testing the communication hypothesis without a baseline effect.
+
+    \item \textbf{Map the crossover curve.} Run a sequence-length sweep (64, 128, 256, 512, 1024) on a single T4 GPU with standard vs FlashAttention to empirically determine the T4 crossover threshold. This produces a publishable characterization result regardless of the communication hypothesis outcome.
+
+    \item \textbf{Test DDP vs FSDP at the validated sequence length.} Once a sequence length with confirmed FlashAttention speedup is identified, run the original 6-configuration matrix (single GPU / DDP / FSDP $\times$ standard / flash attention) to test whether communication overhead modulates the speedup.
+
+    \item \textbf{Profile kernel dispatch.} Use \texttt{torch.profiler} to verify which SDPA backend kernel is actually executing on T4, and measure achieved memory bandwidth to determine whether the workload is compute-bound or memory-bound at each sequence length.
+\end{enumerate}
+
+% ============================================================
+% Evidence Needed
+% ============================================================
+\section{Evidence Needed}
+
+To make the claim committee-ready, the following additional evidence is required:
+
+\begin{itemize}
+    \item \textbf{Confirmed FlashAttention speedup:} At least one sequence-length/hardware configuration where FlashAttention shows a statistically significant speedup ($>$5\%, outside noise band) over standard attention. Without this, the communication-modulation hypothesis cannot be tested.
+
+    \item \textbf{Crossover characterization:} A sequence-length sweep showing where FlashAttention transitions from slower to faster than standard attention on T4. This is independently publishable as an empirical characterization.
+
+    \item \textbf{Communication-modulation result:} FlashAttention relative speedup measured across single GPU, DDP, and FSDP at a sequence length where the speedup is confirmed. This directly addresses the A02 gap.
+
+    \item \textbf{Kernel profiling evidence:} Confirmation that the intended attention kernel is actually executing (not a fallback), and memory bandwidth utilization data to validate the compute-bound vs memory-bound interpretation.
+
+    \item \textbf{Robustness:} At least 3 repetitions per configuration with reported median and interquartile range. Ideally, validation on a second hardware configuration (A100) if accessible.
+\end{itemize}
+
+\end{document}
