@@ -53,8 +53,7 @@ FlashAttention is **16.34% slower** than standard attention at 65 tokens on T4 G
 │       │   └── decision_memo.pdf
 │       └── ai_usage_log.csv       # AI tools usage documentation
 ├── notebook/
-│   ├── a04_strong_result.ipynb    # Deliverable 1: Experiment notebook (Kaggle)
-│   └── cifar-10-python.tar.gz     # CIFAR-10 dataset (for offline Kaggle GPU)
+│   └── a04_strong_result.ipynb    # Deliverable 1: Experiment notebook (Kaggle)
 ├── results/                       # Saved experiment outputs
 │   ├── all_results.json           # Full results with per-rep data
 │   ├── summary.csv                # Summary table
@@ -72,13 +71,13 @@ FlashAttention is **16.34% slower** than standard attention at 65 tokens on T4 G
 - **GPUs:** 2x NVIDIA Tesla T4 (16 GB HBM2 each)
 - **Interconnect:** PCIe
 - **Framework:** PyTorch 2.10.0+cu128
-- **Dataset:** CIFAR-10 (added as Kaggle input dataset `cifar-10-python`)
+- **Dataset:** CIFAR-10 — added as Kaggle input from [cifar-10-python](https://www.kaggle.com/datasets/pankrzysiu/cifar10-python) (170.5 MB)
 
 ### Step 1: Set Up Kaggle Notebook
 
 1. Create a new Kaggle notebook
 2. Under **Settings**, set Accelerator to **GPU T4 x2**
-3. Click **Add Input** in the sidebar and add the `cifar-10-python` dataset
+3. Click **Add Input** in the sidebar and search for `cifar-10-python` ([link](https://www.kaggle.com/datasets/pankrzysiu/cifar10-python)) — this mounts the dataset at `/kaggle/input/cifar-10-python/`
 4. Upload or paste `notebook/a04_strong_result.ipynb`
 
 ### Step 2: Run All Cells
