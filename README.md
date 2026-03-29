@@ -2,9 +2,9 @@
 
 CISC-727: Advanced Research Explorations (ARE) - I | Assignment A04
 
-**Author:** Kenneth Peter Fernandes
-**Institution:** Harrisburg University of Science and Technology
-**Instructor:** Professor Majid Shaalan, PhD
+**Author:** Kenneth Peter Fernandes  
+**Institution:** Harrisburg University of Science and Technology  
+**Instructor:** Professor Majid Shaalan, PhD  
 
 ## Research Question
 
@@ -100,13 +100,3 @@ After execution, the notebook saves:
 - `results/all_results.json` — full results with per-rep timing data
 - `results/primary_figure.png` — main comparison figure
 - `results/supporting_breakdown.png` — forward/backward/comm breakdown
-
-## Deliverables
-
-| # | Deliverable | Location |
-|---|-------------|----------|
-| D1 | Primary Figure/Table | `results/primary_figure.png` and `notebook/a04_strong_result.ipynb` |
-| D2 | Interpretation (1-2 pages) | `docs/a04/interpretation/interpretation.pdf` |
-| D3 | Decision Memo (1 page) | `docs/a04/decision_memo/decision_memo.pdf` |
-| D4 | Walkthrough Recording | Submitted separately via LMS |
-
